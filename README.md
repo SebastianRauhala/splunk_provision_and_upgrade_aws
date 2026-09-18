@@ -27,7 +27,7 @@ A single master script — `splunk_provisioner.sh`. Version history lives in git
 - **Automation friendly** – flag-driven, non-interactive mode with `--yes`.
 
 ## Actions
-`detect | restart | install-splunk | upgrade-splunk | upgrade-itsi | install-java`
+`detect | restart | install-splunk | install-app | upgrade-splunk | upgrade-itsi | install-java`
 
 ## Quick start
 ```bash
@@ -39,6 +39,9 @@ A single master script — `splunk_provisioner.sh`. Version history lives in git
 
 # Install Java
 ./splunk_provisioner.sh --host <EC2_IP> --action install-java --yes
+
+# Install any app / add-on from a local package (.spl/.tgz); --no-restart to batch
+./splunk_provisioner.sh --host <EC2_IP> --action install-app --package ~/Downloads/app.spl --yes
 
 # Safe restart
 ./splunk_provisioner.sh --host <EC2_IP> --action restart

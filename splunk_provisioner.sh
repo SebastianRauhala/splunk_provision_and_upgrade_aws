@@ -43,6 +43,7 @@ SPLUNK_URLS=( "https://download.splunk.com/products/splunk/releases/10.4.3/linux
 HOST=""; ACTION=""; ASSUME_YES=0
 SPLUNK_ADMIN_USER="admin"; SPLUNK_ADMIN_PASS=""
 VERSION_INDEX=""; RPM_URL=""; ITSI_PACKAGE=""
+NO_RESTART=0
 
 # Detection cache (filled by gather_status)
 ST_SPLUNK_INSTALLED=0; ST_SPLUNK_VERSION=""; ST_ITSI_VERSION=""
@@ -88,10 +89,10 @@ gather_status() {
 SPLUNK_HOME="${SPLUNK_HOME:-/opt/splunk}"
 if sudo test -x "$SPLUNK_HOME/bin/splunk"; then
   echo "SPLUNK_INSTALLED=1"
-  echo "SPLUNK_VERSION=$(sudo "$SPLUNK_HOME/bin/splunk" version 2>/dev/null | awk '{print $2}')"
+  echo "SPLUNK_VERSION=$(sudo -u splunk "$SPLUNK_HOME/bin/splunk" version 2>/dev/null | awk '{print $2}')"
   itsi=$(sudo awk -F= '/^version[[:space:]]*=/{gsub(/ /,"",$2);print $2;exit}' "$SPLUNK_HOME/etc/apps/itsi/default/app.conf" 2>/dev/null)
   echo "ITSI_VERSION=$itsi"
-  if sudo "$SPLUNK_HOME/bin/splunk" status 2>/dev/null | grep -qi 'is running'; then
+  if sudo -u splunk "$SPLUNK_HOME/bin/splunk" status 2>/dev/null | grep -qi 'is running'; then
     echo "STATUS=running"; else echo "STATUS=stopped"; fi
 else
   echo "SPLUNK_INSTALLED=0"
@@ -172,7 +173,7 @@ REMOTE
 }
 
 splunk_installed() { rexec "sudo test -x ${SPLUNK_HOME}/bin/splunk"; }
-splunk_version_remote() { rexec "sudo ${SPLUNK_HOME}/bin/splunk version 2>/dev/null | awk '{print \$2}'"; }
+splunk_version_remote() { rexec "sudo -u splunk ${SPLUNK_HOME}/bin/splunk version 2>/dev/null | awk '{print \$2}'"; }
 itsi_version_remote() { rexec "sudo awk -F= '/^version[[:space:]]*=/ {gsub(/ /,\"\",\$2); print \$2; exit}' ${SPLUNK_HOME}/etc/apps/itsi/default/app.conf 2>/dev/null"; }
 java_installed() { rexec "command -v java >/dev/null 2>&1"; }
 
@@ -181,7 +182,7 @@ splunk_stop() {
   log "Stopping Splunk via: $method ($name)"
   case "$method" in
     systemd) rexec "sudo systemctl stop $name" ;;
-    *)       rexec "sudo ${SPLUNK_HOME}/bin/splunk stop" ;;
+    *)       rexec "sudo -u splunk ${SPLUNK_HOME}/bin/splunk stop" ;;
   esac
   local i
   for i in $(seq 1 30); do
@@ -196,14 +197,14 @@ splunk_start() {
   log "Starting Splunk via: $method ($name)"
   case "$method" in
     systemd) rexec "sudo systemctl start $name" ;;
-    *)       rexec "sudo ${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt" ;;
+    *)       rexec "sudo -u splunk ${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt" ;;
   esac
 }
 
 wait_for_splunkd() {
   local i
   for i in $(seq 1 60); do
-    if rexec "sudo ${SPLUNK_HOME}/bin/splunk status 2>/dev/null | grep -qi 'is running'"; then
+    if rexec "sudo -u splunk ${SPLUNK_HOME}/bin/splunk status 2>/dev/null | grep -qi 'is running'"; then
       ok "splunkd is running."; return 0
     fi
     sleep 5
@@ -303,7 +304,7 @@ install_splunk() {
     || die "Failed to write user-seed.conf."
   rexec "sudo chown -R splunk:splunk ${SPLUNK_HOME}"
   log "4/6 First start (accepts license, applies admin seed)..."
-  rexec "sudo ${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt" \
+  rexec "sudo -u splunk ${SPLUNK_HOME}/bin/splunk start --accept-license --answer-yes --no-prompt" \
     || die "Initial start failed."
   log "5/6 Enabling boot-start (systemd)..."
   if confirm "Enable boot-start via systemd (recommended)?"; then
@@ -393,6 +394,35 @@ upgrade_itsi() {
   log "Allow a few minutes for KV/migration jobs to settle."
 }
 
+# --- Install: generic app/add-on (from a local .spl/.tgz) ------------------
+# Extracts a Splunk app package into etc/apps. Use --no-restart to batch
+# several installs and restart once at the end.
+install_app() {
+  require_host
+  splunk_installed || die "Splunk not installed on $HOST."
+  local pkg="$ITSI_PACKAGE"
+  [ -n "$pkg" ] || die "install-app requires --package PATH"
+  [ -f "$pkg" ] || die "Package not found: $pkg"
+  local base="${pkg##*/}"
+  log "Installing app package: $base"
+  confirm "Install app '$base' onto $HOST?" || { log "Aborted."; return 1; }
+
+  log "1/3 Copying package (this can take a while for large apps)..."
+  rcopy "$pkg" "$USER@$HOST:/home/$USER/" || die "scp failed."
+  log "2/3 Extracting into etc/apps..."
+  rexec "sudo tar -xzf /home/$USER/$(printf %q "$base") -C ${SPLUNK_HOME}/etc/apps/" \
+    || die "Extraction failed."
+  log "3/3 Restoring ownership..."
+  rexec "sudo chown -R splunk:splunk ${SPLUNK_HOME}/etc/apps/"
+  ok "Extracted $base."
+  if [ "$NO_RESTART" -eq 1 ]; then
+    warn "Skipping restart (--no-restart). A restart is required to load the app."
+  else
+    log "Restarting Splunk to load the app..."
+    restart_splunk
+  fi
+}
+
 # --- Detect action (read-only summary) ------------------------------------
 action_detect() {
   gather_status || return 1
@@ -411,6 +441,7 @@ parse_args() {
       --admin-user)    SPLUNK_ADMIN_USER="$2"; shift 2 ;;
       --admin-pass)    SPLUNK_ADMIN_PASS="$2"; shift 2 ;;
       --key)           DEF_KEY="$2"; SSH_OPTS[1]="$2"; shift 2 ;;
+      --no-restart)    NO_RESTART=1; shift ;;
       --yes|-y)        ASSUME_YES=1; shift ;;
       -h|--help)       ACTION="help"; shift ;;
       *) die "Unknown argument: $1" ;;
@@ -421,7 +452,7 @@ parse_args() {
 usage() {
   cat <<USG
 Usage: $0 [--host IP] [--action ACTION] [options]
-Actions: detect | restart | install-splunk | upgrade-splunk | upgrade-itsi | install-java
+Actions: detect | restart | install-splunk | install-app | upgrade-splunk | upgrade-itsi | install-java
 Options: --version-index N | --rpm-url URL | --package PATH
          --admin-user U | --admin-pass P | --key PATH | --yes
 Run with no arguments for the interactive menu.
@@ -483,6 +514,7 @@ main() {
       install-splunk)  install_splunk ;;
       upgrade-splunk)  upgrade_splunk ;;
       upgrade-itsi)    upgrade_itsi ;;
+      install-app)     install_app ;;
       install-java)    ensure_java ;;
       *) die "Unknown action: $ACTION" ;;
     esac
