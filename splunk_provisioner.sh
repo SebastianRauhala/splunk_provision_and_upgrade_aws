@@ -45,6 +45,7 @@ SPLUNK_ADMIN_USER="admin"; SPLUNK_ADMIN_PASS=""
 VERSION_INDEX=""; RPM_URL=""; ITSI_PACKAGE=""
 NO_RESTART=0
 LICENSE_PATH=""
+JSON_OUTPUT=0
 
 # Detection cache (filled by gather_status)
 ST_SPLUNK_INSTALLED=0; ST_SPLUNK_VERSION=""; ST_ITSI_VERSION=""
@@ -543,11 +544,41 @@ install_license() {
       && restart_splunk || warn "Licenses placed; they apply on the next restart."
   fi
 }
-
 # --- Detect action (read-only summary) ------------------------------------
+# Emit a JSON string literal (escaped) or the word null when empty.
+_json_str() {
+  if [ -z "$1" ]; then printf 'null'; return; fi
+  local s=${1//\\/\\\\}; s=${s//\"/\\\"}
+  printf '"%s"' "$s"
+}
+
+# Machine-readable status for automation / AI agents (from the ST_* cache).
+emit_detect_json() {
+  local method="" name=""
+  if [ -n "$ST_SERVICE" ]; then method="${ST_SERVICE%%|*}"; name="${ST_SERVICE#*|}"; fi
+  local installed=false; [ "$ST_SPLUNK_INSTALLED" = "1" ] && installed=true
+  local dfree dsize dpct
+  dfree=$(printf '%s' "$ST_DISK" | sed -n 's/^\([^ ]*\) free of .*/\1/p')
+  dsize=$(printf '%s' "$ST_DISK" | sed -n 's/.* free of \([^ ]*\) .*/\1/p')
+  dpct=$(printf '%s'  "$ST_DISK" | sed -n 's/.*(\([0-9]*\)% used).*/\1/p')
+  printf '{\n'
+  printf '  "host": %s,\n'             "$(_json_str "$HOST")"
+  printf '  "splunk_installed": %s,\n' "$installed"
+  printf '  "splunk_version": %s,\n'   "$(_json_str "$ST_SPLUNK_VERSION")"
+  printf '  "itsi_version": %s,\n'     "$(_json_str "$ST_ITSI_VERSION")"
+  printf '  "java_version": %s,\n'     "$(_json_str "$ST_JAVA_VERSION")"
+  printf '  "service_method": %s,\n'   "$(_json_str "$method")"
+  printf '  "service_name": %s,\n'     "$(_json_str "$name")"
+  printf '  "status": %s,\n'           "$(_json_str "$ST_STATUS")"
+  printf '  "disk_free": %s,\n'        "$(_json_str "$dfree")"
+  printf '  "disk_size": %s,\n'        "$(_json_str "$dsize")"
+  printf '  "disk_used_pct": %s\n'     "${dpct:-null}"
+  printf '}\n'
+}
+
 action_detect() {
   gather_status || return 1
-  print_status_panel
+  if [ "$JSON_OUTPUT" = "1" ]; then emit_detect_json; else print_status_panel; fi
 }
 
 # --- Arg parsing -----------------------------------------------------------
@@ -564,6 +595,7 @@ parse_args() {
       --key)           DEF_KEY="$2"; SSH_OPTS[1]="$2"; shift 2 ;;
       --license)       LICENSE_PATH="$2"; shift 2 ;;
       --no-restart)    NO_RESTART=1; shift ;;
+      --json)          JSON_OUTPUT=1; shift ;;
       --yes|-y)        ASSUME_YES=1; shift ;;
       -h|--help)       ACTION="help"; shift ;;
       *) die "Unknown argument: $1" ;;
@@ -576,7 +608,8 @@ usage() {
 Usage: $0 [--host IP] [--action ACTION] [options]
 Actions: detect | restart | install-splunk | install-app | install-license | upgrade-app | upgrade-splunk | upgrade-itsi | install-java
 Options: --version-index N | --rpm-url URL | --package PATH | --license PATH
-         --admin-user U | --admin-pass P | --key PATH | --yes
+         --admin-user U | --admin-pass P | --key PATH | --no-restart | --yes
+         --json  (detect: emit machine-readable JSON for automation/agents)
 Run with no arguments for the interactive menu.
 USG
 }

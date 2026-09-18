@@ -154,8 +154,34 @@ Every capability is a flag-driven `--action`. Add `--yes` to auto-confirm.
 --admin-pass P       Splunk admin password (required for non-interactive install)
 --key PATH           SSH private key (default: ~/.ssh/lab_key.pem)
 --no-restart         Skip the restart after install-app / install-license (batch)
+--json               detect only: emit machine-readable JSON instead of the panel
 --yes, -y            Auto-confirm prompts (non-interactive)
 ```
+
+### Machine-readable status (`--json`) — for automation / AI agents
+`detect --json` prints the host state as a JSON object (instead of the panel) so
+an agent or script can branch on it without scraping text:
+```bash
+./splunk_provisioner.sh --host <IP> --action detect --json | jq .
+```
+```json
+{
+  "host": "<IP>",
+  "splunk_installed": true,
+  "splunk_version": "10.4.3",
+  "itsi_version": "5.0.2",
+  "java_version": "11.0.28 2025-07-15 LTS",
+  "service_method": "binary",
+  "service_name": "/opt/splunk/bin/splunk",
+  "status": "running",
+  "disk_free": "69G",
+  "disk_size": "80G",
+  "disk_used_pct": 14
+}
+```
+Missing values are `null` (e.g. `itsi_version` when ITSI is absent). Combined
+with the script's exit codes, an agent can decide the next action, guard disk
+space before upgrades, and verify version/status after an action.
 
 ### Splunk version catalog (for `--version-index`)
 ```
