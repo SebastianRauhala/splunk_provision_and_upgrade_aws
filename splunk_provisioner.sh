@@ -369,11 +369,11 @@ _scan_downloads() {
 
 # scp a package to the host and extract it into etc/apps (no service action).
 _deploy_app_files() {
-  local pkg="$1" base="${pkg##*/}"
+  local pkg="$1"; local base="${pkg##*/}"
   log "Copying $base (large apps can take a while)..."
   rcopy "$pkg" "$USER@$HOST:/home/$USER/" || { err "scp failed."; return 1; }
   log "Extracting into etc/apps..."
-  rexec "sudo tar -xzf /home/$USER/$(printf %q "$base") -C ${SPLUNK_HOME}/etc/apps/" \
+  rexec "sudo tar --warning=no-unknown-keyword -xzf /home/$USER/$(printf %q "$base") -C ${SPLUNK_HOME}/etc/apps/" \
     || { err "Extraction failed."; return 1; }
   rexec "sudo chown -R splunk:splunk ${SPLUNK_HOME}/etc/apps/"
   ok "Deployed $base."
@@ -427,7 +427,7 @@ install_app() {
 # Shared engine for generic app upgrades and the ITSI upgrade wrapper.
 # Args: $1 = package path, $2 = human label, $3 = disk MB needed.
 _upgrade_app_engine() {
-  local pkg="$1" label="$2" need="${3:-3000}" base="${pkg##*/}"
+  local pkg="$1" label="$2" need="${3:-3000}"; local base="${pkg##*/}"
   confirm "Upgrade ${label} on $HOST using $base? (splunkd will be stopped)" \
     || { log "Aborted."; return 1; }
   preflight_disk "$need" || return 1
