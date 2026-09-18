@@ -36,8 +36,8 @@ box would resolve to `systemd|Splunkd.service` — same script, no changes.
 # Safe restart
 ./aws_prov_v6.sh --host 3.90.172.45 --action restart
 
-# Upgrade Splunk 9.4.1 -> 9.4.3 (index 4 in catalog), non-interactive
-./aws_prov_v6.sh --host 3.90.172.45 --action upgrade-splunk --version-index 4 --yes
+# Upgrade Splunk 9.4.1 -> 9.4.3 (index 7 in catalog), non-interactive
+./aws_prov_v6.sh --host 3.90.172.45 --action upgrade-splunk --version-index 7 --yes
 
 # Upgrade Splunk from an arbitrary RPM URL
 ./aws_prov_v6.sh --host 3.90.172.45 --action upgrade-splunk --rpm-url https://.../splunk-*.rpm --yes
@@ -47,7 +47,7 @@ box would resolve to `systemd|Splunkd.service` — same script, no changes.
 ```
 
 ## Catalog version indexes (for --version-index)
-0=10.2.0  1=10.0.2  2=10.0.1  3=10.0.0  4=9.4.3  5=9.4.2  6=9.4.1  7=9.3.6  8=9.2.8  9=9.1.10
+0=10.4.3  1=10.4.1  2=10.2.7  3=10.2.0  4=10.0.2  5=10.0.1  6=10.0.0  7=9.4.3  8=9.4.2  9=9.4.1  10=9.3.6  11=9.2.8  12=9.1.10
 
 ## Safety notes
 - KV Store backup intentionally **skipped** (lab). Re-enable for production:

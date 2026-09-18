@@ -27,8 +27,8 @@ AWS EC2 (Amazon Linux 2023) over SSH.
 # Safe restart
 ./aws_prov_v6.sh --host <EC2_IP> --action restart
 
-# Upgrade Splunk (catalog index 4 = 9.4.3)
-./aws_prov_v6.sh --host <EC2_IP> --action upgrade-splunk --version-index 4 --yes
+# Upgrade Splunk (catalog index 7 = 9.4.3)
+./aws_prov_v6.sh --host <EC2_IP> --action upgrade-splunk --version-index 7 --yes
 
 # Upgrade ITSI from a local package
 ./aws_prov_v6.sh --host <EC2_IP> --action upgrade-itsi --package ~/Downloads/itsi.spl --yes
