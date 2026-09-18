@@ -1,4 +1,4 @@
-# aws_provision_and_upgrade
+# splunk_provision_and_upgrade_aws
 
 Automated provisioning **and safe upgrades** of Splunk Enterprise (and ITSI) on
 AWS EC2 (Amazon Linux 2023) over SSH.
