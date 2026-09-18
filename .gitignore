@@ -1,0 +1,17 @@
+# Never commit secrets / keys
+*.pem
+*.key
+id_*
+*.lic
+*.License
+*.license
+
+# Splunk packages
+*.rpm
+*.spl
+*.tgz
+*.tar.gz
+
+# OS / editor cruft
+.DS_Store
+*.swp
