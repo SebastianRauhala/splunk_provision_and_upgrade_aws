@@ -1,7 +1,7 @@
-# aws_prov_v6.sh — Upgrade Runbook
+# splunk_provisioner.sh — Upgrade Runbook
 
-New version lives at `aws_prov_v6.sh`. The original `aws_prov_v5.sh`
-is untouched. Run with **no args** for the interactive menu, or use flags for
+Script: `splunk_provisioner.sh` (master). Earlier versions live in git history.
+Run with **no args** for the interactive menu, or use flags for
 automation / AI agents.
 
 ## Versatile service control (init.d + systemd + binary)
@@ -31,19 +31,19 @@ box would resolve to `systemd|Splunkd.service` — same script, no changes.
 ## Examples
 ```bash
 # Read-only status (safe, verified working on lab)
-./aws_prov_v6.sh --host 3.90.172.45 --action detect
+./splunk_provisioner.sh --host 3.90.172.45 --action detect
 
 # Safe restart
-./aws_prov_v6.sh --host 3.90.172.45 --action restart
+./splunk_provisioner.sh --host 3.90.172.45 --action restart
 
 # Upgrade Splunk 9.4.1 -> 9.4.3 (index 7 in catalog), non-interactive
-./aws_prov_v6.sh --host 3.90.172.45 --action upgrade-splunk --version-index 7 --yes
+./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-splunk --version-index 7 --yes
 
 # Upgrade Splunk from an arbitrary RPM URL
-./aws_prov_v6.sh --host 3.90.172.45 --action upgrade-splunk --rpm-url https://.../splunk-*.rpm --yes
+./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-splunk --rpm-url https://.../splunk-*.rpm --yes
 
 # Upgrade ITSI from a local .spl
-./aws_prov_v6.sh --host 3.90.172.45 --action upgrade-itsi --package ~/Downloads/itsi-4.21.x.spl --yes
+./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-itsi --package ~/Downloads/itsi-4.21.x.spl --yes
 ```
 
 ## Catalog version indexes (for --version-index)

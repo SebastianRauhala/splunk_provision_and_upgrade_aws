@@ -1,21 +1,24 @@
 #!/bin/bash
 #
-# Splunk Provisioning & Upgrade Script for AWS EC2  (v7)
+# Splunk Provisioning & Upgrade Script for AWS EC2
 # Author: Sebastian Rauhala
-#   v6: versatile service control (init.d + systemd + raw binary), safe upgrades.
-#   v7: - silenced SSH warning spam (LogLevel=ERROR)
-#       - single round-trip status gather + colorized, adaptive looping menu
-#       - real Install Splunk flow (RPM + admin seed + boot-start)
-#       - Java detect/install (java-11-amazon-corretto-devel)
 #
-# Backward compatible: run with NO arguments for an interactive menu.
+# Master script. Version history is tracked in git (see: git log --follow).
+# Capabilities: detect | restart | install-splunk | upgrade-splunk |
+#               upgrade-itsi | install-java
+#   - Versatile service control (init.d + systemd + raw binary), safe upgrades
+#   - Single round-trip status gather + colorized, adaptive looping menu
+#   - Fresh install flow (RPM + admin seed + systemd boot-start)
+#   - Java detect/install (java-11-amazon-corretto-devel)
+#
+# Run with NO arguments for the interactive menu.
 # Non-interactive examples (AI-agent / automation friendly):
-#   ./aws_prov_v7.sh --host 3.90.172.45 --action detect
-#   ./aws_prov_v7.sh --host 3.90.172.45 --action restart
-#   ./aws_prov_v7.sh --host 3.90.172.45 --action install-splunk --version-index 7 --admin-pass 'PW' --yes
-#   ./aws_prov_v7.sh --host 3.90.172.45 --action upgrade-splunk --version-index 4 --yes
-#   ./aws_prov_v7.sh --host 3.90.172.45 --action upgrade-itsi --package ~/Downloads/itsi.spl --yes
-#   ./aws_prov_v7.sh --host 3.90.172.45 --action install-java --yes
+#   ./splunk_provisioner.sh --host 3.90.172.45 --action detect
+#   ./splunk_provisioner.sh --host 3.90.172.45 --action restart
+#   ./splunk_provisioner.sh --host 3.90.172.45 --action install-splunk --version-index 7 --admin-pass 'PW' --yes
+#   ./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-splunk --version-index 0 --yes
+#   ./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-itsi --package ~/Downloads/itsi.spl --yes
+#   ./splunk_provisioner.sh --host 3.90.172.45 --action install-java --yes
 #
 set -o pipefail
 
