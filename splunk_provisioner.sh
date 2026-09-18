@@ -353,74 +353,137 @@ upgrade_splunk() {
 }
 
 # --- Upgrade: ITSI ---------------------------------------------------------
+# --- App deployment helpers ------------------------------------------------
+# Fills global array PKGS with matching files in the Downloads dir.
+# Args: one or more find -iname patterns (OR-combined).
+_scan_downloads() {
+  PKGS=()
+  local expr=() p first=1 f
+  for p in "$@"; do
+    if [ $first -eq 1 ]; then expr+=( -iname "$p" ); first=0
+    else expr+=( -o -iname "$p" ); fi
+  done
+  while IFS= read -r -d $'\0' f; do PKGS+=("$f"); done \
+    < <(find "$SPLUNK_DOWNLOADS_PATH" -maxdepth 1 \( "${expr[@]}" \) -print0 | sort -z)
+}
+
+# scp a package to the host and extract it into etc/apps (no service action).
+_deploy_app_files() {
+  local pkg="$1" base="${pkg##*/}"
+  log "Copying $base (large apps can take a while)..."
+  rcopy "$pkg" "$USER@$HOST:/home/$USER/" || { err "scp failed."; return 1; }
+  log "Extracting into etc/apps..."
+  rexec "sudo tar -xzf /home/$USER/$(printf %q "$base") -C ${SPLUNK_HOME}/etc/apps/" \
+    || { err "Extraction failed."; return 1; }
+  rexec "sudo chown -R splunk:splunk ${SPLUNK_HOME}/etc/apps/"
+  ok "Deployed $base."
+}
+
+# --- Install apps/add-ons (Splunk stays running; restart to load) ----------
+# Non-interactive: --package PATH (single). Interactive: multi-install loop
+# over every *.spl / *.tgz in the Downloads dir (v5-style).
+install_app() {
+  require_host
+  splunk_installed || die "Splunk not installed on $HOST."
+
+  # Non-interactive single-package path
+  if [ -n "$ITSI_PACKAGE" ]; then
+    [ -f "$ITSI_PACKAGE" ] || die "Package not found: $ITSI_PACKAGE"
+    confirm "Install app '${ITSI_PACKAGE##*/}' onto $HOST?" || { log "Aborted."; return 1; }
+    _deploy_app_files "$ITSI_PACKAGE" || return 1
+    if [ "$NO_RESTART" -eq 1 ]; then
+      warn "Skipping restart (--no-restart). A restart is required to load the app."
+    else
+      log "Restarting Splunk to load the app..."; restart_splunk
+    fi
+    return 0
+  fi
+
+  # Interactive multi-install picker
+  [ "$ASSUME_YES" -eq 1 ] && die "install-app in non-interactive mode requires --package."
+  local PKGS; _scan_downloads "*.spl" "*.tgz"
+  [ ${#PKGS[@]} -gt 0 ] || { warn "No .spl/.tgz packages found in $SPLUNK_DOWNLOADS_PATH."; return 0; }
+  local deployed=0 i sel
+  while true; do
+    echo; echo "Apps in $SPLUNK_DOWNLOADS_PATH:"
+    for i in "${!PKGS[@]}"; do printf '  %s%2d)%s %s\n' "$C_CYN" "$i" "$C_RESET" "${PKGS[$i]##*/}"; done
+    printf '   %sr)%s restart & finish    %sq)%s finish\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET"
+    read -p "$(printf '%sInstall which app? %s' "$C_CYN" "$C_RESET")" sel
+    case "$sel" in
+      q|Q) break ;;
+      r|R) restart_splunk; deployed=0; break ;;
+      *) if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -lt "${#PKGS[@]}" ]; then
+           _deploy_app_files "${PKGS[$sel]}" && deployed=1
+         else warn "Invalid selection."; fi ;;
+    esac
+  done
+  if [ "$deployed" -eq 1 ]; then
+    confirm "Restart Splunk now to load newly installed apps?" \
+      && restart_splunk || warn "Apps deployed; they load on the next restart."
+  fi
+}
+
+# --- Upgrade an app (stop-based: safe overlay while splunkd is down) --------
+# Shared engine for generic app upgrades and the ITSI upgrade wrapper.
+# Args: $1 = package path, $2 = human label, $3 = disk MB needed.
+_upgrade_app_engine() {
+  local pkg="$1" label="$2" need="${3:-3000}" base="${pkg##*/}"
+  confirm "Upgrade ${label} on $HOST using $base? (splunkd will be stopped)" \
+    || { log "Aborted."; return 1; }
+  preflight_disk "$need" || return 1
+  log "Stopping Splunk (safe stop + verify)..."
+  splunk_stop || die "Could not stop Splunk cleanly; aborting before upgrade."
+  _deploy_app_files "$pkg" || die "Deploy failed."
+  log "Starting Splunk (runs app migration)..."
+  splunk_start || die "Start failed after upgrade."
+  wait_for_splunkd || die "splunkd did not come up."
+}
+
+# Generic app upgrade (any *.spl / *.tgz).
+upgrade_app() {
+  require_host
+  splunk_installed || die "Splunk not installed on $HOST."
+  local pkg="$ITSI_PACKAGE" i sel
+  if [ -z "$pkg" ]; then
+    [ "$ASSUME_YES" -eq 1 ] && die "upgrade-app in non-interactive mode requires --package."
+    local PKGS; _scan_downloads "*.spl" "*.tgz"
+    [ ${#PKGS[@]} -gt 0 ] || die "No .spl/.tgz packages found in $SPLUNK_DOWNLOADS_PATH."
+    echo "Apps in $SPLUNK_DOWNLOADS_PATH:"
+    for i in "${!PKGS[@]}"; do printf '  %s%2d)%s %s\n' "$C_CYN" "$i" "$C_RESET" "${PKGS[$i]##*/}"; done
+    read -p "Select app package to upgrade: " sel
+    [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -lt "${#PKGS[@]}" ] || die "Invalid selection."
+    pkg="${PKGS[$sel]}"
+  fi
+  [ -f "$pkg" ] || die "Package not found: $pkg"
+  _upgrade_app_engine "$pkg" "app '${pkg##*/}'" 3000 || return 1
+  ok "App upgrade complete: ${pkg##*/}"
+}
+
+# --- Upgrade: ITSI (specialised app upgrade) -------------------------------
 upgrade_itsi() {
   require_host
   splunk_installed || die "Splunk not installed on $HOST."
   local cur; cur=$(itsi_version_remote)
-  [ -n "$cur" ] || die "ITSI does not appear to be installed (no itsi/default/app.conf)."
+  [ -n "$cur" ] || die "ITSI not installed (no itsi/default/app.conf). Use install-app for a fresh install."
   log "Current ITSI version: $cur"
 
-  local pkg="$ITSI_PACKAGE"
+  local pkg="$ITSI_PACKAGE" i sel
   if [ -z "$pkg" ]; then
-    local found=(); while IFS= read -r -d $'\0' f; do found+=("$f"); done \
-      < <(find "$SPLUNK_DOWNLOADS_PATH" -maxdepth 1 -iname "*itsi*.spl" -print0 | sort -z)
-    [ ${#found[@]} -gt 0 ] || die "No ITSI .spl package found in $SPLUNK_DOWNLOADS_PATH (use --package)."
-    local i; for i in "${!found[@]}"; do printf '  %s%2d)%s %s\n' "$C_CYN" "$i" "$C_RESET" "${found[$i]##*/}"; done
-    read -p "Select ITSI package: " i
-    [[ "$i" =~ ^[0-9]+$ ]] && [ "$i" -lt "${#found[@]}" ] || die "Invalid selection."
-    pkg="${found[$i]}"
+    [ "$ASSUME_YES" -eq 1 ] && die "upgrade-itsi in non-interactive mode requires --package."
+    # Match only real ITSI installer packages, not SA-/DA-/helper apps.
+    local PKGS; _scan_downloads "splunk-it-service-intelligence_*.spl" "itsi-[0-9]*.spl"
+    [ ${#PKGS[@]} -gt 0 ] \
+      || die "No ITSI installer (splunk-it-service-intelligence_*.spl) in $SPLUNK_DOWNLOADS_PATH (use --package)."
+    echo "ITSI packages in $SPLUNK_DOWNLOADS_PATH:"
+    for i in "${!PKGS[@]}"; do printf '  %s%2d)%s %s\n' "$C_CYN" "$i" "$C_RESET" "${PKGS[$i]##*/}"; done
+    read -p "Select ITSI package: " sel
+    [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -lt "${#PKGS[@]}" ] || die "Invalid selection."
+    pkg="${PKGS[$sel]}"
   fi
   [ -f "$pkg" ] || die "Package not found: $pkg"
-  local base="${pkg##*/}"
-  log "Target ITSI package: $base"
-
-  confirm "Upgrade ITSI on $HOST from v$cur using $base? (splunkd will be stopped)" \
-    || { log "Aborted."; return 1; }
-  preflight_disk 5000 || return 1
-
-  log "1/6 Copying package..."
-  rcopy "$pkg" "$USER@$HOST:/home/$USER/" || die "scp failed."
-  log "2/6 Stopping Splunk (safe stop + verify)..."
-  splunk_stop || die "Could not stop Splunk cleanly; aborting."
-  log "3/6 Extracting app over etc/apps..."
-  rexec "sudo tar -xzf /home/$USER/$(printf %q "$base") -C ${SPLUNK_HOME}/etc/apps/" || die "Extraction failed."
-  log "4/6 Restoring ownership..."
-  rexec "sudo chown -R splunk:splunk ${SPLUNK_HOME}/etc/apps/"
-  log "5/6 Starting Splunk (runs ITSI migration)..."
-  splunk_start || die "Start failed after ITSI upgrade."
-  wait_for_splunkd || die "splunkd did not come up."
-  log "6/6 Verifying..."
+  _upgrade_app_engine "$pkg" "ITSI (from v$cur)" 5000 || return 1
   ok "ITSI version now: $(itsi_version_remote)"
   log "Allow a few minutes for KV/migration jobs to settle."
-}
-
-# --- Install: generic app/add-on (from a local .spl/.tgz) ------------------
-# Extracts a Splunk app package into etc/apps. Use --no-restart to batch
-# several installs and restart once at the end.
-install_app() {
-  require_host
-  splunk_installed || die "Splunk not installed on $HOST."
-  local pkg="$ITSI_PACKAGE"
-  [ -n "$pkg" ] || die "install-app requires --package PATH"
-  [ -f "$pkg" ] || die "Package not found: $pkg"
-  local base="${pkg##*/}"
-  log "Installing app package: $base"
-  confirm "Install app '$base' onto $HOST?" || { log "Aborted."; return 1; }
-
-  log "1/3 Copying package (this can take a while for large apps)..."
-  rcopy "$pkg" "$USER@$HOST:/home/$USER/" || die "scp failed."
-  log "2/3 Extracting into etc/apps..."
-  rexec "sudo tar -xzf /home/$USER/$(printf %q "$base") -C ${SPLUNK_HOME}/etc/apps/" \
-    || die "Extraction failed."
-  log "3/3 Restoring ownership..."
-  rexec "sudo chown -R splunk:splunk ${SPLUNK_HOME}/etc/apps/"
-  ok "Extracted $base."
-  if [ "$NO_RESTART" -eq 1 ]; then
-    warn "Skipping restart (--no-restart). A restart is required to load the app."
-  else
-    log "Restarting Splunk to load the app..."
-    restart_splunk
-  fi
 }
 
 # --- Detect action (read-only summary) ------------------------------------
@@ -452,7 +515,7 @@ parse_args() {
 usage() {
   cat <<USG
 Usage: $0 [--host IP] [--action ACTION] [options]
-Actions: detect | restart | install-splunk | install-app | upgrade-splunk | upgrade-itsi | install-java
+Actions: detect | restart | install-splunk | install-app | upgrade-app | upgrade-splunk | upgrade-itsi | install-java
 Options: --version-index N | --rpm-url URL | --package PATH
          --admin-user U | --admin-pass P | --key PATH | --yes
 Run with no arguments for the interactive menu.
@@ -474,6 +537,8 @@ interactive_menu() {
       keys+=("r"); labels+=("Restart Splunk")
       keys+=("u"); labels+=("Upgrade Splunk")
       [ -n "$ST_ITSI_VERSION" ] && { keys+=("i"); labels+=("Upgrade ITSI"); }
+      keys+=("a"); labels+=("Install apps (from ~/Downloads)")
+      keys+=("p"); labels+=("Upgrade an app (stop-based)")
     else
       keys+=("s"); labels+=("Install Splunk ${C_DIM}(fresh)${C_RESET}")
     fi
@@ -494,6 +559,8 @@ interactive_menu() {
       r|R) [ "$ST_SPLUNK_INSTALLED" = "1" ] && restart_splunk || warn "Not available." ;;
       u|U) [ "$ST_SPLUNK_INSTALLED" = "1" ] && upgrade_splunk || warn "Not available." ;;
       i|I) [ -n "$ST_ITSI_VERSION" ] && upgrade_itsi || warn "Not available." ;;
+      a|A) [ "$ST_SPLUNK_INSTALLED" = "1" ] && install_app || warn "Not available." ;;
+      p|P) [ "$ST_SPLUNK_INSTALLED" = "1" ] && upgrade_app || warn "Not available." ;;
       s|S) [ "$ST_SPLUNK_INSTALLED" = "1" ] || install_splunk ;;
       j|J) ensure_java ;;
       d|D) : ;;  # loop re-detects
@@ -514,6 +581,7 @@ main() {
       install-splunk)  install_splunk ;;
       upgrade-splunk)  upgrade_splunk ;;
       upgrade-itsi)    upgrade_itsi ;;
+      upgrade-app)     upgrade_app ;;
       install-app)     install_app ;;
       install-java)    ensure_java ;;
       *) die "Unknown action: $ACTION" ;;

@@ -27,7 +27,14 @@ A single master script — `splunk_provisioner.sh`. Version history lives in git
 - **Automation friendly** – flag-driven, non-interactive mode with `--yes`.
 
 ## Actions
-`detect | restart | install-splunk | install-app | upgrade-splunk | upgrade-itsi | install-java`
+
+- **install-app** – install apps/add-ons while Splunk keeps running (interactive
+  multi-select over `~/Downloads`, or `--package` for one). Restart loads them.
+- **upgrade-app / upgrade-itsi** – stop-based: splunkd is stopped, the package is
+  overlaid, then started (safe for in-place upgrades). ITSI is just a specialised
+  case with an ITSI-only package filter.
+
+`detect | restart | install-splunk | install-app | upgrade-app | upgrade-splunk | upgrade-itsi | install-java`
 
 ## Quick start
 ```bash
