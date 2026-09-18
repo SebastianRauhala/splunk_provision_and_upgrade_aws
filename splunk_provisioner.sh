@@ -583,7 +583,7 @@ USG
 
 # --- Interactive menu (adaptive + looping) ---------------------------------
 interactive_menu() {
-  echo "Enter target EC2 public IP:"; read -r HOST
+  [ -n "$HOST" ] || { echo "Enter target EC2 public IP:"; read -r HOST; }
   require_host
   while true; do
     echo
