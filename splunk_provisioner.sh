@@ -1,11 +1,11 @@
 #!/bin/bash
 #
 # Splunk Provisioning & Upgrade Script for AWS EC2
-# Author: Sebastian Rauhala
+# Author: Sebastian Rauhala | serauhal@cisco.com
 #
 # Master script. Version history is tracked in git (see: git log --follow).
-# Capabilities: detect | restart | install-splunk | upgrade-splunk |
-#               upgrade-itsi | install-java
+# Capabilities: detect | restart | install-splunk | install-app | install-license |
+#               upgrade-app | upgrade-splunk | upgrade-itsi | install-java
 #   - Versatile service control (init.d + systemd + raw binary), safe upgrades
 #   - Single round-trip status gather + colorized, adaptive looping menu
 #   - Fresh install flow (RPM + admin seed + systemd boot-start)
