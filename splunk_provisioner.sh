@@ -44,6 +44,7 @@ HOST=""; ACTION=""; ASSUME_YES=0
 SPLUNK_ADMIN_USER="admin"; SPLUNK_ADMIN_PASS=""
 VERSION_INDEX=""; RPM_URL=""; ITSI_PACKAGE=""
 NO_RESTART=0
+LICENSE_PATH=""
 
 # Detection cache (filled by gather_status)
 ST_SPLUNK_INSTALLED=0; ST_SPLUNK_VERSION=""; ST_ITSI_VERSION=""
@@ -486,6 +487,63 @@ upgrade_itsi() {
   log "Allow a few minutes for KV/migration jobs to settle."
 }
 
+# --- Install one or more Splunk licenses -----------------------------------
+# Places license files in etc/licenses/enterprise/ (auth-free; applied on
+# restart). Non-interactive: --license PATH (single). Interactive: multi-select
+# over *.lic / *.License / *.license in the Downloads dir.
+_deploy_license() {
+  local lic="$1"; local fname="${lic##*/}"
+  local stem="${fname%.*}"; local safe="${stem// /_}.lic"
+  log "Installing license: $fname -> $safe"
+  rcopy "$lic" "$USER@$HOST:/home/$USER/" || { err "scp failed."; return 1; }
+  rexec "sudo mkdir -p ${SPLUNK_HOME}/etc/licenses/enterprise \
+    && sudo mv /home/$USER/$(printf %q "$fname") ${SPLUNK_HOME}/etc/licenses/enterprise/$(printf %q "$safe") \
+    && sudo chown -R splunk:splunk ${SPLUNK_HOME}/etc/licenses" \
+    || { err "Failed to place license on host."; return 1; }
+  ok "Placed $safe in etc/licenses/enterprise/."
+}
+
+install_license() {
+  require_host
+  splunk_installed || die "Splunk not installed on $HOST."
+
+  # Non-interactive single-license path
+  if [ -n "$LICENSE_PATH" ]; then
+    [ -f "$LICENSE_PATH" ] || die "License not found: $LICENSE_PATH"
+    confirm "Install license '${LICENSE_PATH##*/}' onto $HOST?" || { log "Aborted."; return 1; }
+    _deploy_license "$LICENSE_PATH" || return 1
+    if [ "$NO_RESTART" -eq 1 ]; then
+      warn "Skipping restart (--no-restart). A restart is required to apply the license."
+    else
+      log "Restarting Splunk to apply the license..."; restart_splunk
+    fi
+    return 0
+  fi
+
+  # Interactive multi-select
+  [ "$ASSUME_YES" -eq 1 ] && die "install-license in non-interactive mode requires --license."
+  local PKGS; _scan_downloads "*.lic" "*.License" "*.license"
+  [ ${#PKGS[@]} -gt 0 ] || { warn "No license files (*.lic/*.License) found in $SPLUNK_DOWNLOADS_PATH."; return 0; }
+  local applied=0 i sel
+  while true; do
+    echo; echo "Licenses in $SPLUNK_DOWNLOADS_PATH:"
+    for i in "${!PKGS[@]}"; do printf '  %s%2d)%s %s\n' "$C_CYN" "$i" "$C_RESET" "${PKGS[$i]##*/}"; done
+    printf '   %sr)%s restart & finish    %sq)%s finish\n' "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET"
+    read -p "$(printf '%sInstall which license? %s' "$C_CYN" "$C_RESET")" sel
+    case "$sel" in
+      q|Q) break ;;
+      r|R) restart_splunk; applied=0; break ;;
+      *) if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -lt "${#PKGS[@]}" ]; then
+           _deploy_license "${PKGS[$sel]}" && applied=1
+         else warn "Invalid selection."; fi ;;
+    esac
+  done
+  if [ "$applied" -eq 1 ]; then
+    confirm "Restart Splunk now to apply new licenses?" \
+      && restart_splunk || warn "Licenses placed; they apply on the next restart."
+  fi
+}
+
 # --- Detect action (read-only summary) ------------------------------------
 action_detect() {
   gather_status || return 1
@@ -504,6 +562,7 @@ parse_args() {
       --admin-user)    SPLUNK_ADMIN_USER="$2"; shift 2 ;;
       --admin-pass)    SPLUNK_ADMIN_PASS="$2"; shift 2 ;;
       --key)           DEF_KEY="$2"; SSH_OPTS[1]="$2"; shift 2 ;;
+      --license)       LICENSE_PATH="$2"; shift 2 ;;
       --no-restart)    NO_RESTART=1; shift ;;
       --yes|-y)        ASSUME_YES=1; shift ;;
       -h|--help)       ACTION="help"; shift ;;
@@ -515,8 +574,8 @@ parse_args() {
 usage() {
   cat <<USG
 Usage: $0 [--host IP] [--action ACTION] [options]
-Actions: detect | restart | install-splunk | install-app | upgrade-app | upgrade-splunk | upgrade-itsi | install-java
-Options: --version-index N | --rpm-url URL | --package PATH
+Actions: detect | restart | install-splunk | install-app | install-license | upgrade-app | upgrade-splunk | upgrade-itsi | install-java
+Options: --version-index N | --rpm-url URL | --package PATH | --license PATH
          --admin-user U | --admin-pass P | --key PATH | --yes
 Run with no arguments for the interactive menu.
 USG
@@ -539,6 +598,7 @@ interactive_menu() {
       [ -n "$ST_ITSI_VERSION" ] && { keys+=("i"); labels+=("Upgrade ITSI"); }
       keys+=("a"); labels+=("Install apps (from ~/Downloads)")
       keys+=("p"); labels+=("Upgrade an app (stop-based)")
+      keys+=("l"); labels+=("Install license(s) (from ~/Downloads)")
     else
       keys+=("s"); labels+=("Install Splunk ${C_DIM}(fresh)${C_RESET}")
     fi
@@ -561,6 +621,7 @@ interactive_menu() {
       i|I) [ -n "$ST_ITSI_VERSION" ] && upgrade_itsi || warn "Not available." ;;
       a|A) [ "$ST_SPLUNK_INSTALLED" = "1" ] && install_app || warn "Not available." ;;
       p|P) [ "$ST_SPLUNK_INSTALLED" = "1" ] && upgrade_app || warn "Not available." ;;
+      l|L) [ "$ST_SPLUNK_INSTALLED" = "1" ] && install_license || warn "Not available." ;;
       s|S) [ "$ST_SPLUNK_INSTALLED" = "1" ] || install_splunk ;;
       j|J) ensure_java ;;
       d|D) : ;;  # loop re-detects
@@ -582,6 +643,7 @@ main() {
       upgrade-splunk)  upgrade_splunk ;;
       upgrade-itsi)    upgrade_itsi ;;
       upgrade-app)     upgrade_app ;;
+      install-license) install_license ;;
       install-app)     install_app ;;
       install-java)    ensure_java ;;
       *) die "Unknown action: $ACTION" ;;

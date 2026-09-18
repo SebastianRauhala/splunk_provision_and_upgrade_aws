@@ -30,11 +30,14 @@ A single master script — `splunk_provisioner.sh`. Version history lives in git
 
 - **install-app** – install apps/add-ons while Splunk keeps running (interactive
   multi-select over `~/Downloads`, or `--package` for one). Restart loads them.
+- **install-license** – install one or more licenses (interactive multi-select
+  over `~/Downloads`, or `--license` for one). Placed in `etc/licenses/enterprise/`
+  and applied on restart.
 - **upgrade-app / upgrade-itsi** – stop-based: splunkd is stopped, the package is
   overlaid, then started (safe for in-place upgrades). ITSI is just a specialised
   case with an ITSI-only package filter.
 
-`detect | restart | install-splunk | install-app | upgrade-app | upgrade-splunk | upgrade-itsi | install-java`
+`detect | restart | install-splunk | install-app | install-license | upgrade-app | upgrade-splunk | upgrade-itsi | install-java`
 
 ## Quick start
 ```bash
@@ -49,6 +52,9 @@ A single master script — `splunk_provisioner.sh`. Version history lives in git
 
 # Install any app / add-on from a local package (.spl/.tgz); --no-restart to batch
 ./splunk_provisioner.sh --host <EC2_IP> --action install-app --package ~/Downloads/app.spl --yes
+
+# Install a license (interactive multi-select if --license is omitted)
+./splunk_provisioner.sh --host <EC2_IP> --action install-license --license "~/Downloads/mylicense.License" --yes
 
 # Safe restart
 ./splunk_provisioner.sh --host <EC2_IP> --action restart
