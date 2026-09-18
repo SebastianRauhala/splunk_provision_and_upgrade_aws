@@ -13,12 +13,12 @@
 #
 # Run with NO arguments for the interactive menu.
 # Non-interactive examples (AI-agent / automation friendly):
-#   ./splunk_provisioner.sh --host 3.90.172.45 --action detect
-#   ./splunk_provisioner.sh --host 3.90.172.45 --action restart
-#   ./splunk_provisioner.sh --host 3.90.172.45 --action install-splunk --version-index 7 --admin-pass 'PW' --yes
-#   ./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-splunk --version-index 0 --yes
-#   ./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-itsi --package ~/Downloads/itsi.spl --yes
-#   ./splunk_provisioner.sh --host 3.90.172.45 --action install-java --yes
+#   ./splunk_provisioner.sh --host <EC2_IP> --action detect
+#   ./splunk_provisioner.sh --host <EC2_IP> --action restart
+#   ./splunk_provisioner.sh --host <EC2_IP> --action install-splunk --version-index 7 --admin-pass 'PW' --yes
+#   ./splunk_provisioner.sh --host <EC2_IP> --action upgrade-splunk --version-index 0 --yes
+#   ./splunk_provisioner.sh --host <EC2_IP> --action upgrade-itsi --package ~/Downloads/itsi.spl --yes
+#   ./splunk_provisioner.sh --host <EC2_IP> --action install-java --yes
 #
 set -o pipefail
 

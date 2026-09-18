@@ -17,7 +17,7 @@ automation / AI agents.
   otherwise `splunk start --accept-license --answer-yes --no-prompt`.
 - **Health**: waits until `splunk status` reports running.
 
-Lab (3.90.172.45) resolves to `initd|/etc/init.d/splunk`. A `-systemd-managed 1`
+An init.d-managed host resolves to `initd|/etc/init.d/splunk`. A `-systemd-managed 1`
 box would resolve to `systemd|Splunkd.service` — same script, no changes.
 
 ## Actions
@@ -31,19 +31,19 @@ box would resolve to `systemd|Splunkd.service` — same script, no changes.
 ## Examples
 ```bash
 # Read-only status (safe, verified working on lab)
-./splunk_provisioner.sh --host 3.90.172.45 --action detect
+./splunk_provisioner.sh --host <EC2_IP> --action detect
 
 # Safe restart
-./splunk_provisioner.sh --host 3.90.172.45 --action restart
+./splunk_provisioner.sh --host <EC2_IP> --action restart
 
 # Upgrade Splunk 9.4.1 -> 9.4.3 (index 7 in catalog), non-interactive
-./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-splunk --version-index 7 --yes
+./splunk_provisioner.sh --host <EC2_IP> --action upgrade-splunk --version-index 7 --yes
 
 # Upgrade Splunk from an arbitrary RPM URL
-./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-splunk --rpm-url https://.../splunk-*.rpm --yes
+./splunk_provisioner.sh --host <EC2_IP> --action upgrade-splunk --rpm-url https://.../splunk-*.rpm --yes
 
 # Upgrade ITSI from a local .spl
-./splunk_provisioner.sh --host 3.90.172.45 --action upgrade-itsi --package ~/Downloads/itsi-4.21.x.spl --yes
+./splunk_provisioner.sh --host <EC2_IP> --action upgrade-itsi --package ~/Downloads/itsi-4.21.x.spl --yes
 ```
 
 ## Catalog version indexes (for --version-index)
