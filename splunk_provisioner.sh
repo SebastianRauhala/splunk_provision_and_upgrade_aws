@@ -18,7 +18,7 @@
 #   ./splunk_provisioner.sh --host <EC2_IP> --action install-splunk --version-index 7 --admin-pass 'PW' --yes
 #   ./splunk_provisioner.sh --host <EC2_IP> --action upgrade-splunk --version-index 0 --yes
 #   ./splunk_provisioner.sh --host <EC2_IP> --action upgrade-itsi --package ~/Downloads/itsi.spl --yes
-#   ./splunk_provisioner.sh --host <EC2_IP> --action install-java --yes
+#   ./splunk_provisioner.sh --host <EC2_IP> --action install-java --java-version 17 --yes
 #
 set -o pipefail
 
@@ -27,7 +27,12 @@ USER="ec2-user"
 DEF_KEY="${DEF_KEY:-$HOME/.ssh/lab_key.pem}"
 SPLUNK_DOWNLOADS_PATH="${SPLUNK_DOWNLOADS_PATH:-$HOME/Downloads/}"
 SPLUNK_HOME="/opt/splunk"
-JAVA_PACKAGE="java-11-amazon-corretto-devel"
+# Splunk Enterprise 10.x and ITSI 5.x bundle their own JRE. A system JDK is only
+# needed by some apps (DB Connect, some TAs). Those apps support 11 and 17;
+# 17 is the current LTS. 21+ is not accepted by current DB Connect.
+JAVA_VERSIONS=( "11" "17" "21" )
+JAVA_DEFAULT="17"
+JAVA_VERSION=""
 
 # LogLevel=ERROR suppresses the "Permanently added ..." + post-quantum warnings
 # that otherwise print on every single SSH connection.
@@ -35,9 +40,10 @@ SSH_OPTS=(-i "$DEF_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/n
           -o ConnectTimeout=15 -o LogLevel=ERROR)
 
 # --- Splunk Enterprise release catalog ---
-SPLUNK_VERSIONS=( "Splunk Enterprise 10.4.3" "Splunk Enterprise 10.4.1" "Splunk Enterprise 10.2.7" "Splunk Enterprise 10.2.0" "Splunk Enterprise 10.0.2" "Splunk Enterprise 10.0.1" "Splunk Enterprise 10.0.0" "Splunk Enterprise 9.4.3" "Splunk Enterprise 9.4.2" "Splunk Enterprise 9.4.1" "Splunk Enterprise 9.3.6" "Splunk Enterprise 9.2.8" "Splunk Enterprise 9.1.10" )
-SPLUNK_FILENAMES=( "splunk-10.4.3-4174a2deda5d.x86_64.rpm" "splunk-10.4.1-5a009d941268.x86_64.rpm" "splunk-10.2.7-c0bff5b0fac3.x86_64.rpm" "splunk-10.2.0-d749cb17ea65.x86_64.rpm" "splunk-10.0.2-e2d18b4767e9.x86_64.rpm" "splunk-10.0.1-c486717c322b.x86_64.rpm" "splunk-10.0.0-e8eb0c4654f8.x86_64.rpm" "splunk-9.4.3-237ebbd22314.x86_64.rpm" "splunk-9.4.2-e9664af3d956.x86_64.rpm" "splunk-9.4.1-e3bdab203ac8.x86_64.rpm" "splunk-9.3.6-8c495c6a1f7d.x86_64.rpm" "splunk-9.2.8-811db24f0af2.x86_64.rpm" "splunk-9.1.10-a6ea9b30f817.x86_64.rpm" )
-SPLUNK_URLS=( "https://download.splunk.com/products/splunk/releases/10.4.3/linux/splunk-10.4.3-4174a2deda5d.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.4.1/linux/splunk-10.4.1-5a009d941268.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.2.7/linux/splunk-10.2.7-c0bff5b0fac3.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.2.0/linux/splunk-10.2.0-d749cb17ea65.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.0.2/linux/splunk-10.0.2-e2d18b4767e9.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.0.1/linux/splunk-10.0.1-c486717c322b.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.0.0/linux/splunk-10.0.0-e8eb0c4654f8.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.4.3/linux/splunk-9.4.3-237ebbd22314.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.4.2/linux/splunk-9.4.2-e9664af3d956.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.4.1/linux/splunk-9.4.1-e3bdab203ac8.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.3.6/linux/splunk-9.3.6-8c495c6a1f7d.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.2.8/linux/splunk-9.2.8-811db24f0af2.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.1.10/linux/splunk-9.1.10-a6ea9b30f817.x86_64.rpm" )
+# 10.6.1.1 is the newest public Linux build. Cloud 10.6.0.5 is not published as an RPM.
+SPLUNK_VERSIONS=( "Splunk Enterprise 10.6.1.1" "Splunk Enterprise 10.4.3" "Splunk Enterprise 10.4.1" "Splunk Enterprise 10.2.7" "Splunk Enterprise 10.2.0" "Splunk Enterprise 10.0.2" "Splunk Enterprise 10.0.1" "Splunk Enterprise 10.0.0" "Splunk Enterprise 9.4.3" "Splunk Enterprise 9.4.2" "Splunk Enterprise 9.4.1" "Splunk Enterprise 9.3.6" "Splunk Enterprise 9.2.8" "Splunk Enterprise 9.1.10" )
+SPLUNK_FILENAMES=( "splunk-10.6.1.1-b2ae2962645c.x86_64.rpm" "splunk-10.4.3-4174a2deda5d.x86_64.rpm" "splunk-10.4.1-5a009d941268.x86_64.rpm" "splunk-10.2.7-c0bff5b0fac3.x86_64.rpm" "splunk-10.2.0-d749cb17ea65.x86_64.rpm" "splunk-10.0.2-e2d18b4767e9.x86_64.rpm" "splunk-10.0.1-c486717c322b.x86_64.rpm" "splunk-10.0.0-e8eb0c4654f8.x86_64.rpm" "splunk-9.4.3-237ebbd22314.x86_64.rpm" "splunk-9.4.2-e9664af3d956.x86_64.rpm" "splunk-9.4.1-e3bdab203ac8.x86_64.rpm" "splunk-9.3.6-8c495c6a1f7d.x86_64.rpm" "splunk-9.2.8-811db24f0af2.x86_64.rpm" "splunk-9.1.10-a6ea9b30f817.x86_64.rpm" )
+SPLUNK_URLS=( "https://download.splunk.com/products/splunk/releases/10.6.1.1/linux/splunk-10.6.1.1-b2ae2962645c.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.4.3/linux/splunk-10.4.3-4174a2deda5d.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.4.1/linux/splunk-10.4.1-5a009d941268.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.2.7/linux/splunk-10.2.7-c0bff5b0fac3.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.2.0/linux/splunk-10.2.0-d749cb17ea65.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.0.2/linux/splunk-10.0.2-e2d18b4767e9.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.0.1/linux/splunk-10.0.1-c486717c322b.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/10.0.0/linux/splunk-10.0.0-e8eb0c4654f8.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.4.3/linux/splunk-9.4.3-237ebbd22314.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.4.2/linux/splunk-9.4.2-e9664af3d956.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.4.1/linux/splunk-9.4.1-e3bdab203ac8.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.3.6/linux/splunk-9.3.6-8c495c6a1f7d.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.2.8/linux/splunk-9.2.8-811db24f0af2.x86_64.rpm" "https://download.splunk.com/products/splunk/releases/9.1.10/linux/splunk-9.1.10-a6ea9b30f817.x86_64.rpm" )
 
 # --- Globals populated at runtime ---
 HOST=""; ACTION=""; ASSUME_YES=0
@@ -253,17 +259,53 @@ resolve_target_rpm() {
 }
 
 # --- Java detect / install -------------------------------------------------
+# Echoes the Amazon Corretto devel package for a major version, or fails.
+java_package_for() {
+  case "$1" in
+    8|1.8) echo "java-1.8.0-amazon-corretto-devel" ;;
+    11|17|21|22|23|24) echo "java-${1}-amazon-corretto-devel" ;;
+    *) err "Unsupported Java version: $1 (use 11, 17, or 21)"; return 1 ;;
+  esac
+}
+
+resolve_java_version() {
+  local v="$JAVA_VERSION"
+  if [ -z "$v" ]; then
+    if [ "$ASSUME_YES" -eq 1 ]; then
+      v="$JAVA_DEFAULT"
+    else
+      local i
+      echo "Java major version (Amazon Corretto devel):" >&2
+      for i in "${!JAVA_VERSIONS[@]}"; do
+        printf '  %s%2d)%s %s\n' "$C_CYN" "$i" "$C_RESET" "${JAVA_VERSIONS[$i]}" >&2
+      done
+      printf '  default: %s (current LTS; DB Connect accepts 11 and 17)\n' "$JAVA_DEFAULT" >&2
+      read -p "$(printf 'Select version [%s]: ' "$JAVA_DEFAULT")" v
+      [ -n "$v" ] || v="$JAVA_DEFAULT"
+      if [[ "$v" =~ ^[0-9]+$ ]] && [ "$v" -lt "${#JAVA_VERSIONS[@]}" ] && [ "$v" -le 2 ]; then
+        v="${JAVA_VERSIONS[$v]}"
+      fi
+    fi
+  fi
+  java_package_for "$v" >/dev/null || return 1
+  echo "$v"
+}
+
 ensure_java() {
   require_host
+  local ver pkg
+  ver=$(resolve_java_version) || return 1
+  pkg=$(java_package_for "$ver") || return 1
   if java_installed; then
-    ok "Java present: $(rexec "java -version 2>&1 | head -1")"
-    return 0
+    ok "Java already present: $(rexec "java -version 2>&1 | head -1")"
+    confirm "Also install ${pkg}?" || { log "Skipped Java install."; return 0; }
+  else
+    warn "Java not found on $HOST."
+    warn "Splunk 10.x / ITSI 5.x bundle their own JRE. A system JDK is only for apps such as DB Connect (11 or 17)."
+    confirm "Install ${pkg} via yum?" || { log "Skipped Java install."; return 0; }
   fi
-  warn "Java not found on $HOST."
-  warn "Note: modern Splunk bundles its own JRE; Java is only needed for some apps (e.g. DB Connect)."
-  confirm "Install ${JAVA_PACKAGE} via yum?" || { log "Skipped Java install."; return 0; }
-  log "Installing ${JAVA_PACKAGE}..."
-  rexec "sudo yum install -y ${JAVA_PACKAGE}" || { err "Java install failed."; return 1; }
+  log "Installing ${pkg}..."
+  rexec "sudo yum install -y ${pkg}" || { err "Java install failed."; return 1; }
   if java_installed; then ok "Java installed: $(rexec "java -version 2>&1 | head -1")"; else
     err "Java still not detected after install."; return 1; fi
 }
@@ -594,6 +636,7 @@ parse_args() {
       --admin-pass)    SPLUNK_ADMIN_PASS="$2"; shift 2 ;;
       --key)           DEF_KEY="$2"; SSH_OPTS[1]="$2"; shift 2 ;;
       --license)       LICENSE_PATH="$2"; shift 2 ;;
+      --java-version)  JAVA_VERSION="$2"; shift 2 ;;
       --no-restart)    NO_RESTART=1; shift ;;
       --json)          JSON_OUTPUT=1; shift ;;
       --yes|-y)        ASSUME_YES=1; shift ;;
@@ -609,6 +652,7 @@ Usage: $0 [--host IP] [--action ACTION] [options]
 Actions: detect | restart | install-splunk | install-app | install-license | upgrade-app | upgrade-splunk | upgrade-itsi | install-java
 Options: --version-index N | --rpm-url URL | --package PATH | --license PATH
          --admin-user U | --admin-pass P | --key PATH | --no-restart | --yes
+         --java-version N   Amazon Corretto major (11, 17, 21). Default 17.
          --json  (detect: emit machine-readable JSON for automation/agents)
 Run with no arguments for the interactive menu.
 USG
@@ -636,7 +680,7 @@ interactive_menu() {
       keys+=("s"); labels+=("Install Splunk ${C_DIM}(fresh)${C_RESET}")
     fi
     if [ -z "$ST_JAVA_VERSION" ]; then
-      keys+=("j"); labels+=("Install Java ${C_DIM}(${JAVA_PACKAGE})${C_RESET}")
+      keys+=("j"); labels+=("Install Java ${C_DIM}(Corretto 11/17/21, default ${JAVA_DEFAULT})${C_RESET}")
     else
       keys+=("j"); labels+=("Re-check / verify Java")
     fi

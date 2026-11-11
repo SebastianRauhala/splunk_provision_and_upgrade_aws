@@ -107,8 +107,8 @@ Every capability is a flag-driven `--action`. Add `--yes` to auto-confirm.
 # Fresh install (see catalog indexes below; 0 = newest)
 ./splunk_provisioner.sh --host <IP> --action install-splunk --version-index 0 --admin-pass 'PW' --yes
 
-# Install Java (Amazon Corretto 11)
-./splunk_provisioner.sh --host <IP> --action install-java --yes
+# Install Java (Amazon Corretto; default 17, or --java-version 11|17|21)
+./splunk_provisioner.sh --host <IP> --action install-java --java-version 17 --yes
 
 # Install an app/add-on (Splunk stays up; restart loads it). --no-restart to batch
 ./splunk_provisioner.sh --host <IP> --action install-app --package ~/Downloads/app.spl --yes
@@ -136,7 +136,7 @@ Every capability is a flag-driven `--action`. Add `--yes` to auto-confirm.
 | `install-splunk` | n/a | Fresh RPM install + admin seed + systemd boot-start |
 | `install-app` | no | Interactive multi-select over `~/Downloads` or `--package`; restart loads |
 | `install-license` | no | Interactive multi-select or `--license`; applied on restart |
-| `install-java` | no | Amazon Corretto 11 |
+| `install-java` | no | Amazon Corretto; `--java-version` 11, 17 (default), or 21 |
 | `restart` | yes | Graceful stop + verify + start + health check |
 | `upgrade-app` | **yes** | Stop → overlay package → start |
 | `upgrade-itsi` | **yes** | Same engine, ITSI-only package filter |
@@ -153,6 +153,7 @@ Every capability is a flag-driven `--action`. Add `--yes` to auto-confirm.
 --admin-user U       Splunk admin username (default: admin)
 --admin-pass P       Splunk admin password (required for non-interactive install)
 --key PATH           SSH private key (default: ~/.ssh/lab_key.pem)
+--java-version N     Corretto major for install-java: 11, 17 (default), 21
 --no-restart         Skip the restart after install-app / install-license (batch)
 --json               detect only: emit machine-readable JSON instead of the panel
 --yes, -y            Auto-confirm prompts (non-interactive)
@@ -185,8 +186,9 @@ space before upgrades, and verify version/status after an action.
 
 ### Splunk version catalog (for `--version-index`)
 ```
-0=10.4.3  1=10.4.1  2=10.2.7  3=10.2.0  4=10.0.2  5=10.0.1  6=10.0.0
-7=9.4.3   8=9.4.2   9=9.4.1  10=9.3.6  11=9.2.8  12=9.1.10
+0=10.6.1.1  1=10.4.3  2=10.4.1  3=10.2.7  4=10.2.0  5=10.0.2  6=10.0.1  7=10.0.0
+8=9.4.3   9=9.4.2  10=9.4.1  11=9.3.6  12=9.2.8  13=9.1.10
+Cloud 10.6.0.5 is not published as a Linux RPM; 10.6.1.1 is the public stand-in.
 ```
 
 ## 4. Installing ITSI (fresh) — recommended order
